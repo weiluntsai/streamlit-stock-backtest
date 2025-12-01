@@ -25,6 +25,62 @@ initial_capital = st.sidebar.number_input("初始資金 ($)", value=DEFAULT_CAPI
 
 
 # =========================================================
+# 執行參數優化函式 (新增)
+# =========================================================
+def run_optimization(stock_symbol):
+    """執行參數最佳化，找出歷史上報酬率最高的均線組合"""
+    
+    # 我們要測試的均線組合
+    short_windows = [5, 10, 15, 20]
+    long_windows = [20, 30, 40, 50, 60]
+    results = []
+
+    # 抓取資料 (確保 6 個月資料用於優化)
+    df_raw = yf.download(stock_symbol, period="6mo", interval="1d")
+    if isinstance(df_raw.columns, pd.MultiIndex):
+        df_raw.columns = df_raw.columns.get_level_values(0)
+    
+    # 檢查數據
+    if df_raw.empty:
+        return None, "無法抓取優化所需的數據。"
+
+    # 雙重迴圈：測試每一種組合
+    for short_w in short_windows:
+        for long_w in long_windows:
+            if short_w >= long_w:
+                continue
+            
+            df = df_raw.copy()
+            df['Short'] = df['Close'].rolling(window=short_w).mean()
+            df['Long'] = df['Close'].rolling(window=long_w).mean()
+            
+            # 產生訊號
+            df['Signal'] = 0
+            df.loc[df['Short'] > df['Long'], 'Signal'] = 1
+            
+            # 計算策略報酬
+            df['Daily_Return'] = df['Close'].pct_change()
+            df['Strategy_Return'] = df['Signal'].shift(1) * df['Daily_Return']
+            
+            total_return = (df['Strategy_Return'] + 1).cumprod().iloc[-1] - 1
+            total_return_pct = total_return * 100
+            
+            # 紀錄交易次數
+            trades = df['Signal'].diff().abs().sum() / 2
+            
+            results.append({
+                '短均線': short_w,
+                '長均線': long_w,
+                '報酬率(%)': total_return_pct,
+                '交易次數': trades
+            })
+
+    results_df = pd.DataFrame(results)
+    results_df = results_df.sort_values(by='報酬率(%)', ascending=False)
+    return results_df, None
+
+
+# =========================================================
 # 2. 執行回測與繪圖
 # =========================================================
 if st.button("開始回測"):
@@ -153,3 +209,32 @@ if st.button("開始回測"):
         # 捕捉所有運行時的錯誤，並顯示在網頁上
         st.error(f"❌ 發生錯誤 (可能是數據格式問題)：{e}")
         st.info("請嘗試使用其他股票代碼或檢查均線參數設定。")
+
+
+# =========================================================
+# 7. 參數優化器區塊 (新增)
+# =========================================================
+st.markdown("---")
+with st.expander("🛠️ 參數優化器 (找出最佳均線組合)", expanded=False):
+    st.markdown("此功能將測試多組短期/長期均線組合 (例如 5/20, 10/30...)，並依據過去 6 個月的歷史報酬率進行排名。")
+    
+    if st.button(f"開始優化 {sidebar_stock} 參數 (約 5-10 秒)"):
+        with st.spinner("🚀 正在運行回測模擬，請稍候..."):
+            results_df, error = run_optimization(sidebar_stock)
+        
+        if error:
+            st.error(error)
+        elif results_df is not None:
+            # 取得第一名的參數
+            best_short = results_df.iloc[0]['短均線']
+            best_long = results_df.iloc[0]['長均線']
+            best_return = results_df.iloc[0]['報酬率(%)']
+            best_trades = results_df.iloc[0]['交易次數']
+            
+            st.subheader(f"🥇 {sidebar_stock} 最佳策略參數")
+            st.success(f"最佳組合: **{best_short}日 / {best_long}日**")
+            st.info(f"歷史報酬率: **{best_return:.2f}%** (交易次數: {best_trades:.1f})")
+            st.markdown(f"您可以將側邊欄的 MA 參數改為 **{best_short} / {best_long}** 進行精確回測。")
+            
+            st.subheader("完整參數排行榜 (Top 10)")
+            st.dataframe(results_df.head(10).style.format({'報酬率(%)': '{:.2f}%'}))
