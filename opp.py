@@ -10,26 +10,38 @@ DEFAULT_LONG_MA = 30
 DEFAULT_CAPITAL = 10000.0
 
 # =========================================================
-# 1. 網頁介面配置 - 採用深色風格
+# 1. 網頁介面配置 - 採用 TradingView 深色風格
 # =========================================================
 st.set_page_config(layout="wide")
 st.title("📈 美股自動回測系統")
 st.markdown("---")
 
-# 透過 CSS 讓 Streamlit 介面更接近暗色風格 (依賴 Streamlit 運行環境的支援)
-# 註：若要在 Streamlit Cloud 強制暗色，需要在 .streamlit/config.toml 中設定，這裡提供軟性調整
+# 透過 CSS 強化深色模式的可讀性 (提升文字對比度)
 st.markdown("""
     <style>
-    /* 讓 Streamlit 的主要內容區域使用深色背景，以配合圖表 */
+    /* 讓 Streamlit 的主要內容區域使用深色背景，並使用白色文字 */
     .stApp {
-        background-color: #121417; 
-        color: #ddd;
+        background-color: #0d0d0d; /* 模仿 TradingView 較深的背景色 */
+        color: white; /* 提高主要文字對比度 */
     }
     .main .block-container {
         padding-top: 2rem;
         padding-right: 2rem;
         padding-left: 2rem;
         padding-bottom: 2rem;
+    }
+    /* 確保所有標題、文本、Markdown 和主要介面元素都使用白色或淺色 */
+    h1, h2, h3, h4, .stText, .stMarkdown, p, div[data-testid="stTextInput"] label, div[data-testid="stNumberInput"] label {
+        color: white !important;
+    }
+    /* 讓側邊欄背景更明顯 */
+    [data-testid="stSidebar"] {
+        background-color: #1a1a1a;
+    }
+    /* 調整 DataFrame 的背景和文字顏色，確保可讀性 */
+    .stDataFrame {
+        color: white;
+        background-color: #1a1a1a;
     }
     </style>
     """, unsafe_allow_html=True)
