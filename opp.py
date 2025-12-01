@@ -31,36 +31,32 @@ def predict_future_ma(df_historical, short_window, long_window, days_to_predict=
     x = np.arange(len(recent_data))
     y = recent_data.values
     
-    # 2. 線性回歸 (擬合一條直線 y = mx + b)
+    # 2. 線性回歸
     z = np.polyfit(x, y, 1) 
     p = np.poly1d(z)
     
-    # 3. 預測未來 N 天的價格
+    # 3. 預測未來
     future_x = np.arange(len(recent_data), len(recent_data) + days_to_predict)
     future_prices = p(future_x)
     
-    # 4. 產生未來的日期 (跳過週末)
+    # 4. 產生日期
     last_date = df_historical.index[-1]
     future_dates = []
     current_date = last_date
     while len(future_dates) < days_to_predict:
         current_date += timedelta(days=1)
-        if current_date.weekday() < 5: # 0-4 是週一到週五
+        if current_date.weekday() < 5: 
             future_dates.append(current_date)
             
-    # 5. 建立未來數據的 DataFrame
+    # 5. 建立 DataFrame
     df_future = pd.DataFrame(index=future_dates)
     df_future['Close'] = future_prices
     
-    # 合併歷史與未來數據以計算均線
-    # (我們只需要 Close 欄位來算均線)
+    # 合併計算均線
     df_combined = pd.concat([df_historical[['Close']], df_future[['Close']]])
-    
-    # 計算均線
     df_combined['SMA_Short'] = df_combined['Close'].rolling(window=short_window).mean()
     df_combined['SMA_Long'] = df_combined['Close'].rolling(window=long_window).mean()
     
-    # 只回傳未來預測的部分
     return df_combined.tail(days_to_predict)
 
 # =========================================================
@@ -82,7 +78,6 @@ initial_capital = st.sidebar.number_input("初始資金 ($)", value=DEFAULT_CAPI
 # 執行參數優化函式
 # =========================================================
 def run_optimization(stock_symbol):
-    """執行參數最佳化"""
     short_windows = [5, 10, 15, 20]
     long_windows = [20, 30, 40, 50, 60]
     results = []
@@ -111,7 +106,6 @@ def run_optimization(stock_symbol):
             
             total_return = (df['Strategy_Return'] + 1).cumprod().iloc[-1] - 1
             total_return_pct = total_return * 100
-            
             trades = df['Signal'].diff().abs().sum() / 2
             
             results.append({
@@ -138,8 +132,7 @@ if st.button("開始分析 (回測 + 預測)"):
     
     try:
         # 抓取資料
-        df_raw = yf.download(sidebar_stock, period="2y", interval="1d") # 抓久一點以確保 RSI 和長天期均線準確
-        
+        df_raw = yf.download(sidebar_stock, period="2y", interval="1d")
         if isinstance(df_raw.columns, pd.MultiIndex):
             df_raw.columns = df_raw.columns.get_level_values(0)
 
@@ -147,21 +140,20 @@ if st.button("開始分析 (回測 + 預測)"):
             st.error(f"⚠️ 錯誤：無法抓取股票代碼 {sidebar_stock} 的數據。")
             st.stop()
         
-        # --- A. 技術指標計算 ---
+        # --- 技術指標 ---
         df_raw['SMA_Short'] = df_raw['Close'].rolling(window=short_window).mean()
         df_raw['SMA_Long'] = df_raw['Close'].rolling(window=long_window).mean()
-        df_raw['RSI'] = calculate_rsi(df_raw['Close']) # 新增 RSI
+        df_raw['RSI'] = calculate_rsi(df_raw['Close'])
         
-        # 準備回測用的數據 (只取最後 N 天)
         df = df_raw.tail(days_to_test).copy()
 
-        # --- B. 產生買賣訊號 ---
+        # --- 買賣訊號 ---
         df['Signal'] = 0
         df.loc[df['SMA_Short'] > df['SMA_Long'], 'Signal'] = 1
         df.loc[df['SMA_Short'] < df['SMA_Long'], 'Signal'] = 0
         df['Position_Change'] = df['Signal'].diff()
 
-        # --- C. 回測運算 ---
+        # --- 回測運算 ---
         position = 0      
         cash = initial_capital
         trade_log = []    
@@ -188,18 +180,14 @@ if st.button("開始分析 (回測 + 預測)"):
         buy_hold_roi = ((df.iloc[-1]['Close'] - df.iloc[0]['Close']) / df.iloc[0]['Close']) * 100
 
         # ==========================================
-        # 顯示區塊 1: 技術分析儀表板 (New!)
+        # 顯示區塊 1: 技術分析儀表板
         # ==========================================
         st.subheader("🔍 當前技術分析儀表板")
-        
         last_row = df_raw.iloc[-1]
         prev_row = df_raw.iloc[-2]
         
-        # 判斷多空狀態
         trend_status = "🟢 多頭排列 (強勢)" if last_row['SMA_Short'] > last_row['SMA_Long'] else "🔴 空頭排列 (弱勢)"
         rsi_val = last_row['RSI']
-        
-        # RSI 狀態判讀
         if rsi_val > 70: rsi_status = "🔥 超買區 (小心回檔)"
         elif rsi_val < 30: rsi_status = "❄️ 超賣區 (醞釀反彈)"
         else: rsi_status = "⚖️ 中性區間"
@@ -207,9 +195,8 @@ if st.button("開始分析 (回測 + 預測)"):
         col_m1, col_m2, col_m3, col_m4 = st.columns(4)
         col_m1.metric("最新收盤價", f"${last_row['Close']:.2f}", f"{last_row['Close'] - prev_row['Close']:.2f}")
         col_m2.metric("RSI (14)", f"{rsi_val:.1f}", rsi_status)
-        col_m3.metric(f"短期均線 ({short_window}MA)", f"${last_row['SMA_Short']:.2f}")
-        col_m4.metric(f"長期均線 ({long_window}MA)", f"${last_row['SMA_Long']:.2f}")
-        
+        col_m3.metric(f"短均線 ({short_window}MA)", f"${last_row['SMA_Short']:.2f}")
+        col_m4.metric(f"長均線 ({long_window}MA)", f"${last_row['SMA_Long']:.2f}")
         st.info(f"📊 目前市場狀態：**{trend_status}**")
 
         # ==========================================
@@ -221,7 +208,9 @@ if st.button("開始分析 (回測 + 預測)"):
         col2.metric("最終資產", f"${final_value:,.2f}", delta=f"{roi:.2f}%")
         col3.metric("持有基準", f"{buy_hold_roi:.2f}%")
 
-        # K線圖
+        # ==========================================
+        # 關鍵修改：K線圖 + 價格標籤
+        # ==========================================
         st.subheader("📉 K 線圖與交易訊號")
         plots = []
         plots.append(mpf.make_addplot(df['SMA_Short'], color='orange', width=1.5, label=f'SMA {short_window}'))
@@ -235,22 +224,39 @@ if st.button("開始分析 (回測 + 預測)"):
         if not np.all(np.isnan(sell_signals)):
             plots.append(mpf.make_addplot(sell_signals, type='scatter', markersize=100, marker='v', color='green', label='Sell'))
 
-        fig, ax = mpf.plot(df, type='candle', style='yahoo', 
+        # 這裡設定 returnfig=True 以便讓我們後續加上文字
+        fig, axlist = mpf.plot(df, type='candle', style='yahoo', 
                            title=f'{sidebar_stock} Strategy Backtest',
                            volume=True, addplot=plots, returnfig=True, figsize=(12, 6))
+        
+        # === 新增：在箭頭旁標註價格 ===
+        # axlist[0] 是主圖表 (K線圖)
+        for i, (index, row) in enumerate(df.iterrows()):
+            if row['Position_Change'] == 1: # 買進
+                axlist[0].annotate(f"{row['Close']:.0f}", 
+                                   xy=(i, row['Low']*0.98), 
+                                   xytext=(0, -20), 
+                                   textcoords='offset points', 
+                                   ha='center', va='top', color='red', fontsize=8,
+                                   arrowprops=dict(arrowstyle='-', color='red', alpha=0.3))
+            elif row['Position_Change'] == -1: # 賣出
+                axlist[0].annotate(f"{row['Close']:.0f}", 
+                                   xy=(i, row['High']*1.02), 
+                                   xytext=(0, 20), 
+                                   textcoords='offset points', 
+                                   ha='center', va='bottom', color='green', fontsize=8,
+                                   arrowprops=dict(arrowstyle='-', color='green', alpha=0.3))
+
         st.pyplot(fig)
 
         # ==========================================
-        # 顯示區塊 3: 未來預測 (New!)
+        # 顯示區塊 3: 未來預測
         # ==========================================
         st.markdown("---")
         st.subheader("🔮 未來 3 日趨勢預測 (Beta)")
         st.markdown(f"此模組使用**線性回歸**演算法，根據過去 15 天的價格慣性，推估如果趨勢不變，未來 3 天的均線走向。")
 
-        # 執行預測
         df_predict = predict_future_ma(df_raw, short_window, long_window, days_to_predict=3)
-        
-        # 顯示預測表格
         pred_cols = st.columns(3)
         for i, (idx, row) in enumerate(df_predict.iterrows()):
             date_label = idx.strftime('%m/%d (%a)')
@@ -259,8 +265,6 @@ if st.button("開始分析 (回測 + 預測)"):
                 st.metric("預測收盤", f"${row['Close']:.2f}")
                 st.write(f"短均線: **${row['SMA_Short']:.2f}**")
                 st.write(f"長均線: **${row['SMA_Long']:.2f}**")
-                
-                # 簡單的預測解讀
                 if row['SMA_Short'] > row['SMA_Long']:
                     st.success("預測: 維持多頭")
                 else:
@@ -272,7 +276,7 @@ if st.button("開始分析 (回測 + 預測)"):
 
 
 # =========================================================
-# 7. 參數優化器區塊
+# 7. 參數優化器
 # =========================================================
 st.markdown("---")
 with st.expander("🛠️ 參數優化器 (找出最佳均線組合)", expanded=False):
@@ -287,6 +291,5 @@ with st.expander("🛠️ 參數優化器 (找出最佳均線組合)", expanded=
             best_short = results_df.iloc[0]['短均線']
             best_long = results_df.iloc[0]['長均線']
             best_return = results_df.iloc[0]['報酬率(%)']
-            
             st.success(f"最佳組合: **{best_short}日 / {best_long}日** (報酬率: {best_return:.2f}%)")
             st.dataframe(results_df.head(5).style.format({'報酬率(%)': '{:.2f}%'}))
