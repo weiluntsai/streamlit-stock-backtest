@@ -10,41 +10,13 @@ DEFAULT_LONG_MA = 30
 DEFAULT_CAPITAL = 10000.0
 
 # =========================================================
-# 1. 網頁介面配置 - 採用 TradingView 深色風格
+# 1. 網頁介面配置 - 回歸預設亮色風格
 # =========================================================
 st.set_page_config(layout="wide")
 st.title("📈 美股自動回測系統")
 st.markdown("---")
 
-# 透過 CSS 強化深色模式的可讀性 (提升文字對比度)
-st.markdown("""
-    <style>
-    /* 讓 Streamlit 的主要內容區域使用深色背景，並使用白色文字 */
-    .stApp {
-        background-color: #0d0d0d; /* 模仿 TradingView 較深的背景色 */
-        color: white; /* 提高主要文字對比度 */
-    }
-    .main .block-container {
-        padding-top: 2rem;
-        padding-right: 2rem;
-        padding-left: 2rem;
-        padding-bottom: 2rem;
-    }
-    /* 確保所有標題、文本、Markdown 和主要介面元素都使用白色或淺色 */
-    h1, h2, h3, h4, .stText, .stMarkdown, p, div[data-testid="stTextInput"] label, div[data-testid="stNumberInput"] label {
-        color: white !important;
-    }
-    /* 讓側邊欄背景更明顯 */
-    [data-testid="stSidebar"] {
-        background-color: #1a1a1a;
-    }
-    /* 調整 DataFrame 的背景和文字顏色，確保可讀性 */
-    .stDataFrame {
-        color: white;
-        background-color: #1a1a1a;
-    }
-    </style>
-    """, unsafe_allow_html=True)
+# (已移除強制暗色模式的 CSS)
 
 st.sidebar.header("🎯 參數設定")
 sidebar_stock = st.sidebar.text_input("輸入股票代碼 (例如 TSLA, AMD, NVDA)", value="TSLA")
@@ -209,18 +181,16 @@ if st.button("開始回測"):
 
 
         # ==========================================
-        # 6. 繪圖 (K線圖與訊號) - TradingView 風格
+        # 6. 繪圖 (K線圖與訊號) - 回歸預設風格
         # ==========================================
         st.subheader("📉 K 線圖與交易訊號")
         plots = []
 
-        # 加入均線
-        # 調整均線顏色使其在暗色背景下更顯眼
-        plots.append(mpf.make_addplot(df['SMA_Short'], color='#FF9900', width=1.5, label=f'SMA {short_window}')) # 亮橘色
-        plots.append(mpf.make_addplot(df['SMA_Long'], color='#00BCD4', width=1.5, label=f'SMA {long_window}')) # 淺藍色
+        # 加入均線 (回歸基本色)
+        plots.append(mpf.make_addplot(df['SMA_Short'], color='orange', width=1.5, label=f'SMA {short_window}'))
+        plots.append(mpf.make_addplot(df['SMA_Long'], color='blue', width=1.5, label=f'SMA {long_window}'))
 
         # 標記買賣點
-        # 買入 (紅) 和 賣出 (綠) 保持高對比
         buy_signals = np.where(df['Position_Change'] == 1, df['Low']*0.95, np.nan)
         sell_signals = np.where(df['Position_Change'] == -1, df['High']*1.05, np.nan)
 
@@ -229,8 +199,8 @@ if st.button("開始回測"):
         if not np.all(np.isnan(sell_signals)):
             plots.append(mpf.make_addplot(sell_signals, type='scatter', markersize=100, marker='v', color='green', label='Sell'))
 
-        # 繪圖 - 使用 'binance' style，這是常見的暗色高對比風格
-        fig, ax = mpf.plot(df, type='candle', style='binance', 
+        # 繪圖 - 改回 'yahoo' 風格 (亮色背景)
+        fig, ax = mpf.plot(df, type='candle', style='yahoo', 
                            title=f'{sidebar_stock} {short_window}/{long_window} MA Cross Strategy',
                            volume=True, addplot=plots, returnfig=True, figsize=(12, 6))
         
