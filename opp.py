@@ -10,11 +10,29 @@ DEFAULT_LONG_MA = 30
 DEFAULT_CAPITAL = 10000.0
 
 # =========================================================
-# 1. 網頁介面配置
+# 1. 網頁介面配置 - 採用深色風格
 # =========================================================
 st.set_page_config(layout="wide")
 st.title("📈 美股自動回測系統")
 st.markdown("---")
+
+# 透過 CSS 讓 Streamlit 介面更接近暗色風格 (依賴 Streamlit 運行環境的支援)
+# 註：若要在 Streamlit Cloud 強制暗色，需要在 .streamlit/config.toml 中設定，這裡提供軟性調整
+st.markdown("""
+    <style>
+    /* 讓 Streamlit 的主要內容區域使用深色背景，以配合圖表 */
+    .stApp {
+        background-color: #121417; 
+        color: #ddd;
+    }
+    .main .block-container {
+        padding-top: 2rem;
+        padding-right: 2rem;
+        padding-left: 2rem;
+        padding-bottom: 2rem;
+    }
+    </style>
+    """, unsafe_allow_html=True)
 
 st.sidebar.header("🎯 參數設定")
 sidebar_stock = st.sidebar.text_input("輸入股票代碼 (例如 TSLA, AMD, NVDA)", value="TSLA")
@@ -25,7 +43,7 @@ initial_capital = st.sidebar.number_input("初始資金 ($)", value=DEFAULT_CAPI
 
 
 # =========================================================
-# 執行參數優化函式 (新增)
+# 執行參數優化函式
 # =========================================================
 def run_optimization(stock_symbol):
     """執行參數最佳化，找出歷史上報酬率最高的均線組合"""
@@ -179,16 +197,18 @@ if st.button("開始回測"):
 
 
         # ==========================================
-        # 6. 繪圖 (K線圖與訊號)
+        # 6. 繪圖 (K線圖與訊號) - TradingView 風格
         # ==========================================
         st.subheader("📉 K 線圖與交易訊號")
         plots = []
 
         # 加入均線
-        plots.append(mpf.make_addplot(df['SMA_Short'], color='orange', width=1.5, label=f'SMA {short_window}'))
-        plots.append(mpf.make_addplot(df['SMA_Long'], color='blue', width=1.5, label=f'SMA {long_window}'))
+        # 調整均線顏色使其在暗色背景下更顯眼
+        plots.append(mpf.make_addplot(df['SMA_Short'], color='#FF9900', width=1.5, label=f'SMA {short_window}')) # 亮橘色
+        plots.append(mpf.make_addplot(df['SMA_Long'], color='#00BCD4', width=1.5, label=f'SMA {long_window}')) # 淺藍色
 
         # 標記買賣點
+        # 買入 (紅) 和 賣出 (綠) 保持高對比
         buy_signals = np.where(df['Position_Change'] == 1, df['Low']*0.95, np.nan)
         sell_signals = np.where(df['Position_Change'] == -1, df['High']*1.05, np.nan)
 
@@ -197,8 +217,8 @@ if st.button("開始回測"):
         if not np.all(np.isnan(sell_signals)):
             plots.append(mpf.make_addplot(sell_signals, type='scatter', markersize=100, marker='v', color='green', label='Sell'))
 
-        # 繪圖
-        fig, ax = mpf.plot(df, type='candle', style='yahoo', 
+        # 繪圖 - 使用 'binance' style，這是常見的暗色高對比風格
+        fig, ax = mpf.plot(df, type='candle', style='binance', 
                            title=f'{sidebar_stock} {short_window}/{long_window} MA Cross Strategy',
                            volume=True, addplot=plots, returnfig=True, figsize=(12, 6))
         
@@ -212,7 +232,7 @@ if st.button("開始回測"):
 
 
 # =========================================================
-# 7. 參數優化器區塊 (新增)
+# 7. 參數優化器區塊
 # =========================================================
 st.markdown("---")
 with st.expander("🛠️ 參數優化器 (找出最佳均線組合)", expanded=False):
