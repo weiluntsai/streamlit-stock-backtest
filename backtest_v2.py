@@ -5,41 +5,78 @@ import mplfinance as mpf
 import numpy as np
 from datetime import timedelta
 
-# Initialize session state for parameters if not present
+# Initialize session state for parameters
 if 'short_window' not in st.session_state:
     st.session_state['short_window'] = 20
 if 'long_window' not in st.session_state:
     st.session_state['long_window'] = 30
 
 # =========================================================
-# Helper Function: Calculate RSI
+# Technical Indicator Helper Functions
 # =========================================================
+
 def calculate_rsi(series, period=14):
+    """Relative Strength Index (RSI)"""
     delta = series.diff()
     gain = (delta.where(delta > 0, 0)).ewm(alpha=1/period, adjust=False).mean()
     loss = (-delta.where(delta < 0, 0)).ewm(alpha=1/period, adjust=False).mean()
     rs = gain / loss
     return 100 - (100 / (1 + rs))
 
+def calculate_macd(df, fast=12, slow=26, signal=9):
+    """Moving Average Convergence Divergence (MACD)"""
+    ema_fast = df['Close'].ewm(span=fast, adjust=False).mean()
+    ema_slow = df['Close'].ewm(span=slow, adjust=False).mean()
+    df['MACD_Line'] = ema_fast - ema_slow
+    df['MACD_Signal'] = df['MACD_Line'].ewm(span=signal, adjust=False).mean()
+    df['MACD_Hist'] = df['MACD_Line'] - df['MACD_Signal']
+    return df
+
+def calculate_bollinger_bands(df, window=20, num_std=2):
+    """Bollinger Bands (BB)"""
+    rolling_mean = df['Close'].rolling(window=window).mean()
+    rolling_std = df['Close'].rolling(window=window).std()
+    df['BB_Upper'] = rolling_mean + (rolling_std * num_std)
+    df['BB_Lower'] = rolling_mean - (rolling_std * num_std)
+    # Band Width for volatility analysis
+    df['BB_Width'] = (df['BB_Upper'] - df['BB_Lower']) / rolling_mean
+    return df
+
+def calculate_kdj(df, period=9):
+    """Stochastic Oscillator (KDJ)"""
+    low_min = df['Low'].rolling(window=period).min()
+    high_max = df['High'].rolling(window=period).max()
+    
+    # RSV (Raw Stochastic Value)
+    rsv = (df['Close'] - low_min) / (high_max - low_min) * 100
+    
+    # Calculate K, D, J
+    # Pandas ewm adjust=False alpha=1/3 is roughly equivalent to SMA smoothing logic in KDJ
+    df['K'] = rsv.ewm(alpha=1/3, adjust=False).mean()
+    df['D'] = df['K'].ewm(alpha=1/3, adjust=False).mean()
+    df['J'] = 3 * df['K'] - 2 * df['D']
+    return df
+
+def calculate_obv(df):
+    """On-Balance Volume (OBV)"""
+    # If Close > Prev_Close, +Volume; if Close < Prev_Close, -Volume
+    obv_change = np.where(df['Close'] > df['Close'].shift(1), df['Volume'], 
+                 np.where(df['Close'] < df['Close'].shift(1), -df['Volume'], 0))
+    df['OBV'] = pd.Series(obv_change, index=df.index).cumsum()
+    return df
+
 # =========================================================
 # Helper Function: Future Prediction (Linear Regression)
 # =========================================================
 def predict_future_ma(df_historical, short_window, long_window, days_to_predict=3):
-    # Use last 15 days for trend analysis
     recent_data = df_historical['Close'].tail(15)
-    
     x = np.arange(len(recent_data))
     y = recent_data.values
-    
-    # Linear Regression
     z = np.polyfit(x, y, 1) 
     p = np.poly1d(z)
-    
-    # Predict future prices
     future_x = np.arange(len(recent_data), len(recent_data) + days_to_predict)
     future_prices = p(future_x)
     
-    # Generate future dates (skip weekends)
     last_date = df_historical.index[-1]
     future_dates = []
     current_date = last_date
@@ -81,9 +118,7 @@ def run_optimization(stock_symbol):
                 df = df_raw.copy()
                 df['Short'] = df['Close'].rolling(window=short_w).mean()
                 df['Long'] = df['Close'].rolling(window=long_w).mean()
-                
-                df['Signal'] = 0
-                df.loc[df['Short'] > df['Long'], 'Signal'] = 1
+                df['Signal'] = np.where(df['Short'] > df['Long'], 1, 0)
                 
                 df['Daily_Return'] = df['Close'].pct_change()
                 df['Strategy_Return'] = df['Signal'].shift(1) * df['Daily_Return']
@@ -108,29 +143,26 @@ def run_optimization(stock_symbol):
 # =========================================================
 # UI Configuration
 # =========================================================
-st.set_page_config(layout="wide", page_title="Quantitative Strategy Backtester")
-st.title("Quantitative Strategy Backtester")
+st.set_page_config(layout="wide", page_title="Professional Quant Backtester")
+st.title("Professional Quant Backtester")
 st.markdown("---")
 
 # Sidebar Configuration
 st.sidebar.header("Settings")
 sidebar_stock = st.sidebar.text_input("Ticker Symbol", value="TSLA")
-days_to_test = st.sidebar.slider("Backtest Period (Days)", 30, 365, 60)
+days_to_test = st.sidebar.slider("Backtest Period (Days)", 30, 365, 90)
 initial_capital = st.sidebar.number_input("Initial Capital ($)", value=10000.0)
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("Strategy Parameters (MA)")
 
-# =========================================================
-# Section 1: Parameter Optimization (Moved to Top)
-# =========================================================
+# Optimization Section (Top)
 with st.expander("Parameter Optimization", expanded=True):
-    st.markdown("Test multiple Moving Average combinations based on 6-month historical data to find the optimal strategy.")
-    
+    st.markdown("Find optimal MA combinations based on 6-month history.")
     col_opt1, col_opt2 = st.columns([1, 4])
     with col_opt1:
-        if st.button("Run Optimization"):
-            with st.spinner("Optimizing..."):
+        if st.button("Run Optimizer"):
+            with st.spinner("Processing..."):
                 results_df, error = run_optimization(sidebar_stock)
             
             if error:
@@ -139,28 +171,28 @@ with st.expander("Parameter Optimization", expanded=True):
                 best_short = int(results_df.iloc[0]['Short MA'])
                 best_long = int(results_df.iloc[0]['Long MA'])
                 best_return = results_df.iloc[0]['Return (%)']
-                
-                # Auto-update session state
                 st.session_state['short_window'] = best_short
                 st.session_state['long_window'] = best_long
-                
-                st.success(f"Optimal Parameters Found: {best_short} / {best_long} (Return: {best_return:.2f}%)")
-                st.info("Parameters have been automatically updated in the sidebar.")
-                st.dataframe(results_df.head(5).style.format({'Return (%)': '{:.2f}%'}))
+                st.success(f"Optimal: {best_short}/{best_long} (Ret: {best_return:.2f}%)")
+                st.info("Sidebar parameters updated.")
 
-# Input widgets linked to session state
 short_window = st.sidebar.number_input("Short MA", key='short_window', min_value=1)
 long_window = st.sidebar.number_input("Long MA", key='long_window', min_value=2)
 
+st.sidebar.markdown("---")
+st.sidebar.subheader("Technical Indicators")
+show_bollinger = st.sidebar.checkbox("Bollinger Bands (Overlay)", value=True)
+add_indicator = st.sidebar.selectbox("Additional Panel Indicator", ["None", "MACD", "KDJ", "OBV", "RSI"], index=1)
+
 # =========================================================
-# Section 2: Backtest & Analysis
+# Analysis Section
 # =========================================================
 if st.button("Run Analysis (Backtest + Forecast)"):
     if short_window >= long_window:
-        st.error("Invalid Parameters: Short MA must be less than Long MA.")
+        st.error("Short MA must be less than Long MA.")
         st.stop()
         
-    st.info(f"Fetching data for {sidebar_stock}...")
+    st.info(f"Analyzing {sidebar_stock}...")
     
     try:
         # Fetch Data
@@ -169,23 +201,37 @@ if st.button("Run Analysis (Backtest + Forecast)"):
             df_raw.columns = df_raw.columns.get_level_values(0)
 
         if df_raw.empty:
-            st.error(f"Error: No data found for {sidebar_stock}.")
+            st.error("No data found.")
             st.stop()
         
-        # Calculate Indicators
+        # --- Calculate Indicators ---
+        # 1. Moving Averages
         df_raw['SMA_Short'] = df_raw['Close'].rolling(window=short_window).mean()
         df_raw['SMA_Long'] = df_raw['Close'].rolling(window=long_window).mean()
+        
+        # 2. RSI
         df_raw['RSI'] = calculate_rsi(df_raw['Close'])
         
+        # 3. Bollinger Bands
+        df_raw = calculate_bollinger_bands(df_raw)
+        
+        # 4. MACD
+        df_raw = calculate_macd(df_raw)
+        
+        # 5. KDJ
+        df_raw = calculate_kdj(df_raw)
+        
+        # 6. OBV
+        df_raw = calculate_obv(df_raw)
+        
+        # Slice for Backtest
         df = df_raw.tail(days_to_test).copy()
 
-        # Generate Signals
-        df['Signal'] = 0
-        df.loc[df['SMA_Short'] > df['SMA_Long'], 'Signal'] = 1
-        df.loc[df['SMA_Short'] < df['SMA_Long'], 'Signal'] = 0
+        # Signal Generation (MA Cross)
+        df['Signal'] = np.where(df['SMA_Short'] > df['SMA_Long'], 1, 0)
         df['Position_Change'] = df['Signal'].diff()
 
-        # Backtest Logic
+        # Backtest Engine
         position = 0      
         cash = initial_capital
         trade_log = []    
@@ -212,98 +258,110 @@ if st.button("Run Analysis (Backtest + Forecast)"):
         buy_hold_roi = ((df.iloc[-1]['Close'] - df.iloc[0]['Close']) / df.iloc[0]['Close']) * 100
 
         # ---------------------------------------------------------
-        # Dashboard: Market Status
+        # Dashboard
         # ---------------------------------------------------------
         st.subheader("Market Status Dashboard")
-        last_row = df_raw.iloc[-1]
-        prev_row = df_raw.iloc[-2]
+        curr = df_raw.iloc[-1]
         
-        trend_status = "Bullish" if last_row['SMA_Short'] > last_row['SMA_Long'] else "Bearish"
-        rsi_val = last_row['RSI']
+        # Logic for status
+        trend_status = "Bullish" if curr['SMA_Short'] > curr['SMA_Long'] else "Bearish"
+        macd_status = "Bullish" if curr['MACD_Line'] > curr['MACD_Signal'] else "Bearish"
+        bb_status = "High Volatility" if curr['BB_Width'] > df_raw['BB_Width'].mean() else "Stable"
         
-        if rsi_val > 70: rsi_status = "Overbought"
-        elif rsi_val < 30: rsi_status = "Oversold"
+        # RSI Logic
+        if curr['RSI'] > 70: rsi_status = "Overbought"
+        elif curr['RSI'] < 30: rsi_status = "Oversold"
         else: rsi_status = "Neutral"
 
-        col_m1, col_m2, col_m3, col_m4 = st.columns(4)
-        col_m1.metric("Close Price", f"${last_row['Close']:.2f}", f"{last_row['Close'] - prev_row['Close']:.2f}")
-        col_m2.metric("RSI (14)", f"{rsi_val:.1f}", rsi_status)
-        col_m3.metric(f"Short MA ({short_window})", f"${last_row['SMA_Short']:.2f}")
-        col_m4.metric(f"Long MA ({long_window})", f"${last_row['SMA_Long']:.2f}")
-        
-        st.write(f"**Trend Condition:** {trend_status}")
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Trend (MA)", trend_status, f"{curr['Close']:.2f}")
+        c2.metric("Momentum (MACD)", macd_status, f"{curr['MACD_Hist']:.2f}")
+        c3.metric("RSI (14)", f"{curr['RSI']:.1f}", rsi_status)
+        c4.metric("Volatility (BB)", bb_status, f"Width: {curr['BB_Width']:.2f}")
 
         # ---------------------------------------------------------
-        # Backtest Performance
+        # Performance & Chart
         # ---------------------------------------------------------
         st.markdown("---")
-        st.subheader("Backtest Performance")
-        col1, col2, col3 = st.columns(3)
-        col1.metric("Initial Capital", f"${initial_capital:,.2f}")
-        col2.metric("Final Equity", f"${final_value:,.2f}", delta=f"{roi:.2f}%")
-        col3.metric("Buy & Hold Return", f"{buy_hold_roi:.2f}%")
+        c_p1, c_p2, c_p3 = st.columns(3)
+        c_p1.metric("Strategy Return", f"{roi:.2f}%")
+        c_p2.metric("Buy & Hold Return", f"{buy_hold_roi:.2f}%")
+        c_p3.metric("Final Equity", f"${final_value:,.2f}")
 
-        # ---------------------------------------------------------
-        # Charting
-        # ---------------------------------------------------------
-        st.subheader("Price Chart & Signals")
+        st.subheader("Technical Analysis Chart")
+        
+        # Prepare plots
         plots = []
+        # MAs
         plots.append(mpf.make_addplot(df['SMA_Short'], color='orange', width=1.5, label=f'SMA {short_window}'))
         plots.append(mpf.make_addplot(df['SMA_Long'], color='blue', width=1.5, label=f'SMA {long_window}'))
+        
+        # Bollinger Bands (Optional)
+        if show_bollinger:
+            plots.append(mpf.make_addplot(df['BB_Upper'], color='gray', alpha=0.3, width=0.8))
+            plots.append(mpf.make_addplot(df['BB_Lower'], color='gray', alpha=0.3, width=0.8))
 
+        # Additional Indicator Panel
+        if add_indicator == "MACD":
+            plots.append(mpf.make_addplot(df['MACD_Line'], panel=1, color='fuchsia', ylabel='MACD'))
+            plots.append(mpf.make_addplot(df['MACD_Signal'], panel=1, color='b'))
+            # Histogram for MACD
+            plots.append(mpf.make_addplot(df['MACD_Hist'], type='bar', panel=1, color='dimgray', alpha=0.5))
+        elif add_indicator == "RSI":
+            plots.append(mpf.make_addplot(df['RSI'], panel=1, color='purple', ylabel='RSI', ylim=(0, 100)))
+            # Add overbought/oversold lines
+            plots.append(mpf.make_addplot([70]*len(df), panel=1, color='red', linestyle='--', width=0.8))
+            plots.append(mpf.make_addplot([30]*len(df), panel=1, color='green', linestyle='--', width=0.8))
+        elif add_indicator == "KDJ":
+            plots.append(mpf.make_addplot(df['K'], panel=1, color='orange', ylabel='KDJ'))
+            plots.append(mpf.make_addplot(df['D'], panel=1, color='blue'))
+            plots.append(mpf.make_addplot(df['J'], panel=1, color='purple'))
+        elif add_indicator == "OBV":
+            plots.append(mpf.make_addplot(df['OBV'], panel=1, color='teal', ylabel='OBV'))
+
+        # Buy/Sell Markers
         buy_signals = np.where(df['Position_Change'] == 1, df['Low']*0.98, np.nan)
         sell_signals = np.where(df['Position_Change'] == -1, df['High']*1.02, np.nan)
-
-        if not np.all(np.isnan(buy_signals)):
-            plots.append(mpf.make_addplot(buy_signals, type='scatter', markersize=100, marker='^', color='red', label='Buy'))
-        if not np.all(np.isnan(sell_signals)):
-            plots.append(mpf.make_addplot(sell_signals, type='scatter', markersize=100, marker='v', color='green', label='Sell'))
-
-        fig, axlist = mpf.plot(df, type='candle', style='yahoo', 
-                           title=f'{sidebar_stock} Backtest Analysis',
-                           volume=True, addplot=plots, returnfig=True, figsize=(12, 6))
         
-        # Annotate prices on chart
+        if not np.all(np.isnan(buy_signals)):
+            plots.append(mpf.make_addplot(buy_signals, type='scatter', markersize=100, marker='^', color='red'))
+        if not np.all(np.isnan(sell_signals)):
+            plots.append(mpf.make_addplot(sell_signals, type='scatter', markersize=100, marker='v', color='green'))
+
+        # Plotting
+        fig, axlist = mpf.plot(df, type='candle', style='yahoo', 
+                           title=f'{sidebar_stock} Technical Analysis',
+                           volume=(add_indicator=="None"), # Show volume only if no other panel takes space
+                           addplot=plots, returnfig=True, figsize=(12, 8),
+                           panel_ratios=(2, 1) if add_indicator != "None" else (1,))
+        
+        # Annotations
         ax_main = axlist[0]
         for i, (index, row) in enumerate(df.iterrows()):
-            if row['Position_Change'] == 1: # Buy
-                ax_main.annotate(f"{row['Close']:.0f}", 
-                                   xy=(i, row['Low']*0.98), 
-                                   xytext=(0, -20), 
-                                   textcoords='offset points', 
-                                   ha='center', va='top', color='red', fontsize=8,
-                                   arrowprops=dict(arrowstyle='-', color='red', alpha=0.3))
-            elif row['Position_Change'] == -1: # Sell
-                ax_main.annotate(f"{row['Close']:.0f}", 
-                                   xy=(i, row['High']*1.02), 
-                                   xytext=(0, 20), 
-                                   textcoords='offset points', 
-                                   ha='center', va='bottom', color='green', fontsize=8,
-                                   arrowprops=dict(arrowstyle='-', color='green', alpha=0.3))
+            if row['Position_Change'] == 1:
+                ax_main.annotate(f"{row['Close']:.0f}", xy=(i, row['Low']*0.98), 
+                                 xytext=(0, -15), textcoords='offset points', ha='center', color='red', fontsize=8)
+            elif row['Position_Change'] == -1:
+                ax_main.annotate(f"{row['Close']:.0f}", xy=(i, row['High']*1.02), 
+                                 xytext=(0, 15), textcoords='offset points', ha='center', color='green', fontsize=8)
 
         st.pyplot(fig)
 
         # ---------------------------------------------------------
-        # Future Prediction
+        # Future Forecast
         # ---------------------------------------------------------
         st.markdown("---")
-        st.subheader("3-Day Forecast (Beta)")
-        st.markdown("Linear regression projection based on 15-day price momentum.")
-
+        st.subheader("3-Day Price Forecast (Beta)")
+        
         df_predict = predict_future_ma(df_raw, short_window, long_window, days_to_predict=3)
-        pred_cols = st.columns(3)
+        cols = st.columns(3)
         for i, (idx, row) in enumerate(df_predict.iterrows()):
-            date_label = idx.strftime('%m/%d (%a)')
-            with pred_cols[i]:
-                st.write(f"**{date_label}**")
-                st.metric("Proj. Close", f"${row['Close']:.2f}")
-                st.caption(f"SMA {short_window}: ${row['SMA_Short']:.2f}")
-                st.caption(f"SMA {long_window}: ${row['SMA_Long']:.2f}")
-                
-                if row['SMA_Short'] > row['SMA_Long']:
-                    st.success("Bullish")
-                else:
-                    st.error("Bearish")
+            with cols[i]:
+                st.write(f"**{idx.strftime('%m/%d')}**")
+                st.metric("Proj. Price", f"${row['Close']:.2f}")
+                signal = "Bullish" if row['SMA_Short'] > row['SMA_Long'] else "Bearish"
+                color = "green" if signal == "Bullish" else "red"
+                st.markdown(f"Signal: :{color}[{signal}]")
 
     except Exception as e:
-        st.error(f"An error occurred: {e}")
+        st.error(f"Error: {e}")
