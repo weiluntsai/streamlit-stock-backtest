@@ -5,18 +5,101 @@ import mplfinance as mpf
 import numpy as np
 from datetime import timedelta
 
-# Initialize session state for parameters
+# =========================================================
+# UI Configuration (Must be the first Streamlit command)
+# =========================================================
+st.set_page_config(
+    layout="wide", 
+    page_title="Quant Dashboard Pro",
+    initial_sidebar_state="expanded"
+)
+
+# Initialize session state
 if 'short_window' not in st.session_state:
     st.session_state['short_window'] = 20
 if 'long_window' not in st.session_state:
     st.session_state['long_window'] = 30
 
 # =========================================================
-# Technical Indicator Helper Functions
+# Custom CSS (The "Dribbble Style" Magic)
+# =========================================================
+st.markdown("""
+    <style>
+    /* 1. 全局背景與字體 */
+    .stApp {
+        background-color: #0E1117; /* 極深藍黑背景 */
+        color: #FAFAFA;
+        font-family: 'Inter', sans-serif;
+    }
+    
+    /* 2. 側邊欄美化 */
+    [data-testid="stSidebar"] {
+        background-color: #161B22;
+        border-right: 1px solid #30363D;
+    }
+    
+    /* 3. Metric 卡片化設計 (模仿 Dashboard 小卡片) */
+    div[data-testid="stMetric"] {
+        background-color: #1F242D; /* 卡片背景 */
+        padding: 15px;
+        border-radius: 12px;
+        border: 1px solid #30363D;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+        transition: transform 0.2s;
+    }
+    div[data-testid="stMetric"]:hover {
+        transform: translateY(-2px);
+        border-color: #58A6FF; /* 滑鼠懸停發光 */
+    }
+    
+    /* 4. 按鈕美化 (霓虹風格) */
+    .stButton > button {
+        background: linear-gradient(45deg, #238636, #2EA043);
+        color: white;
+        border: none;
+        border-radius: 8px;
+        font-weight: bold;
+        transition: all 0.3s ease;
+    }
+    .stButton > button:hover {
+        box-shadow: 0 0 10px #2EA043;
+    }
+    
+    /* 5. 表格美化 */
+    [data-testid="stDataFrame"] {
+        background-color: #161B22;
+        border-radius: 10px;
+        padding: 10px;
+    }
+    
+    /* 6. 標題與文字顏色調整 */
+    h1, h2, h3 {
+        color: #E6EDF3 !important;
+        font-weight: 600;
+    }
+    p, label {
+        color: #8B949E !important;
+    }
+    
+    /* 7. 隱藏 Streamlit 預設頂部與 footer */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
+    
+    /* 8. Expander 樣式 */
+    .streamlit-expanderHeader {
+        background-color: #1F242D;
+        border-radius: 8px;
+        color: #E6EDF3;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+# =========================================================
+# Helper Functions (Calculation Logic)
 # =========================================================
 
 def calculate_rsi(series, period=14):
-    """Relative Strength Index (RSI)"""
     delta = series.diff()
     gain = (delta.where(delta > 0, 0)).ewm(alpha=1/period, adjust=False).mean()
     loss = (-delta.where(delta < 0, 0)).ewm(alpha=1/period, adjust=False).mean()
@@ -24,7 +107,6 @@ def calculate_rsi(series, period=14):
     return 100 - (100 / (1 + rs))
 
 def calculate_macd(df, fast=12, slow=26, signal=9):
-    """Moving Average Convergence Divergence (MACD)"""
     ema_fast = df['Close'].ewm(span=fast, adjust=False).mean()
     ema_slow = df['Close'].ewm(span=slow, adjust=False).mean()
     df['MACD_Line'] = ema_fast - ema_slow
@@ -33,47 +115,20 @@ def calculate_macd(df, fast=12, slow=26, signal=9):
     return df
 
 def calculate_bollinger_bands(df, window=20, num_std=2):
-    """Bollinger Bands (BB)"""
     rolling_mean = df['Close'].rolling(window=window).mean()
     rolling_std = df['Close'].rolling(window=window).std()
     df['BB_Upper'] = rolling_mean + (rolling_std * num_std)
     df['BB_Lower'] = rolling_mean - (rolling_std * num_std)
-    # Band Width for volatility analysis
     df['BB_Width'] = (df['BB_Upper'] - df['BB_Lower']) / rolling_mean
     return df
 
-def calculate_kdj(df, period=9):
-    """Stochastic Oscillator (KDJ)"""
-    low_min = df['Low'].rolling(window=period).min()
-    high_max = df['High'].rolling(window=period).max()
-    
-    # RSV (Raw Stochastic Value)
-    rsv = (df['Close'] - low_min) / (high_max - low_min) * 100
-    
-    # Calculate K, D, J
-    # Pandas ewm adjust=False alpha=1/3 is roughly equivalent to SMA smoothing logic in KDJ
-    df['K'] = rsv.ewm(alpha=1/3, adjust=False).mean()
-    df['D'] = df['K'].ewm(alpha=1/3, adjust=False).mean()
-    df['J'] = 3 * df['K'] - 2 * df['D']
-    return df
-
-def calculate_obv(df):
-    """On-Balance Volume (OBV)"""
-    # If Close > Prev_Close, +Volume; if Close < Prev_Close, -Volume
-    obv_change = np.where(df['Close'] > df['Close'].shift(1), df['Volume'], 
-                 np.where(df['Close'] < df['Close'].shift(1), -df['Volume'], 0))
-    df['OBV'] = pd.Series(obv_change, index=df.index).cumsum()
-    return df
-
-# =========================================================
-# Helper Function: Future Prediction (Linear Regression)
-# =========================================================
 def predict_future_ma(df_historical, short_window, long_window, days_to_predict=3):
     recent_data = df_historical['Close'].tail(15)
     x = np.arange(len(recent_data))
     y = recent_data.values
     z = np.polyfit(x, y, 1) 
     p = np.poly1d(z)
+    
     future_x = np.arange(len(recent_data), len(recent_data) + days_to_predict)
     future_prices = p(future_x)
     
@@ -94,9 +149,6 @@ def predict_future_ma(df_historical, short_window, long_window, days_to_predict=
     
     return df_combined.tail(days_to_predict)
 
-# =========================================================
-# Optimization Logic
-# =========================================================
 def run_optimization(stock_symbol):
     short_windows = [5, 10, 15, 20]
     long_windows = [20, 30, 40, 50, 60]
@@ -108,7 +160,7 @@ def run_optimization(stock_symbol):
             df_raw.columns = df_raw.columns.get_level_values(0)
         
         if df_raw.empty:
-            return None, "No data found for symbol."
+            return None, "No data found."
 
         for short_w in short_windows:
             for long_w in long_windows:
@@ -125,243 +177,182 @@ def run_optimization(stock_symbol):
                 
                 total_return = (df['Strategy_Return'] + 1).cumprod().iloc[-1] - 1
                 total_return_pct = total_return * 100
-                trades = df['Signal'].diff().abs().sum() / 2
                 
                 results.append({
-                    'Short MA': short_w,
-                    'Long MA': long_w,
-                    'Return (%)': total_return_pct,
-                    'Trades': trades
+                    'Short': short_w,
+                    'Long': long_w,
+                    'Return': total_return_pct
                 })
 
         results_df = pd.DataFrame(results)
-        results_df = results_df.sort_values(by='Return (%)', ascending=False)
+        results_df = results_df.sort_values(by='Return', ascending=False)
         return results_df, None
     except Exception as e:
         return None, str(e)
 
 # =========================================================
-# UI Configuration
+# Sidebar
 # =========================================================
-st.set_page_config(layout="wide", page_title="Professional Quant Backtester")
-st.title("Professional Quant Backtester")
-st.markdown("---")
+st.sidebar.markdown("## ⚙️ Configuration")
+sidebar_stock = st.sidebar.text_input("Ticker", value="TSLA")
+days_to_test = st.sidebar.slider("Lookback Days", 30, 365, 90)
+initial_capital = st.sidebar.number_input("Capital ($)", value=10000.0)
 
-# Sidebar Configuration
-st.sidebar.header("Settings")
-sidebar_stock = st.sidebar.text_input("Ticker Symbol", value="TSLA")
-days_to_test = st.sidebar.slider("Backtest Period (Days)", 30, 365, 90)
-initial_capital = st.sidebar.number_input("Initial Capital ($)", value=10000.0)
+st.sidebar.markdown("### Strategy (MA)")
+# Connect number inputs to session state
+short_window = st.sidebar.number_input("Short Term", key='short_window', min_value=1)
+long_window = st.sidebar.number_input("Long Term", key='long_window', min_value=2)
 
-st.sidebar.markdown("---")
-st.sidebar.subheader("Strategy Parameters (MA)")
-
-# Optimization Section (Top)
-with st.expander("Parameter Optimization", expanded=True):
-    st.markdown("Find optimal MA combinations based on 6-month history.")
-    col_opt1, col_opt2 = st.columns([1, 4])
-    with col_opt1:
-        if st.button("Run Optimizer"):
-            with st.spinner("Processing..."):
-                results_df, error = run_optimization(sidebar_stock)
-            
-            if error:
-                st.error(f"Error: {error}")
-            elif results_df is not None:
-                best_short = int(results_df.iloc[0]['Short MA'])
-                best_long = int(results_df.iloc[0]['Long MA'])
-                best_return = results_df.iloc[0]['Return (%)']
-                st.session_state['short_window'] = best_short
-                st.session_state['long_window'] = best_long
-                st.success(f"Optimal: {best_short}/{best_long} (Ret: {best_return:.2f}%)")
-                st.info("Sidebar parameters updated.")
-
-short_window = st.sidebar.number_input("Short MA", key='short_window', min_value=1)
-long_window = st.sidebar.number_input("Long MA", key='long_window', min_value=2)
-
-st.sidebar.markdown("---")
-st.sidebar.subheader("Technical Indicators")
-show_bollinger = st.sidebar.checkbox("Bollinger Bands (Overlay)", value=True)
-add_indicator = st.sidebar.selectbox("Additional Panel Indicator", ["None", "MACD", "KDJ", "OBV", "RSI"], index=1)
+st.sidebar.markdown("### Indicators")
+show_bollinger = st.sidebar.checkbox("Bollinger Bands", value=True)
+add_indicator = st.sidebar.selectbox("Sub-Chart", ["None", "MACD", "RSI"], index=1)
 
 # =========================================================
-# Analysis Section
+# Main Layout
 # =========================================================
-if st.button("Run Analysis (Backtest + Forecast)"):
-    if short_window >= long_window:
-        st.error("Short MA must be less than Long MA.")
-        st.stop()
+
+# 1. Header & Optimization (Top Section)
+st.title(f"📊 {sidebar_stock} Analytics")
+
+with st.expander("🚀 Strategy Optimizer", expanded=False):
+    st.markdown("Run a 6-month historical simulation to find the best parameters.")
+    if st.button("Auto-Optimize Parameters"):
+        with st.spinner("Simulating strategies..."):
+            results_df, error = run_optimization(sidebar_stock)
         
-    st.info(f"Analyzing {sidebar_stock}...")
+        if error:
+            st.error(error)
+        elif results_df is not None:
+            best_short = int(results_df.iloc[0]['Short'])
+            best_long = int(results_df.iloc[0]['Long'])
+            best_ret = results_df.iloc[0]['Return']
+            
+            # Update State
+            st.session_state['short_window'] = best_short
+            st.session_state['long_window'] = best_long
+            
+            st.success(f"Best Found: {best_short}/{best_long} (Return: {best_ret:.2f}%)")
+            st.dataframe(results_df.head(5).style.format("{:.2f}"))
+
+# 2. Main Analysis Trigger
+if st.button("Run Full Analysis", type="primary"):
     
+    # Data Processing
     try:
-        # Fetch Data
-        df_raw = yf.download(sidebar_stock, period="2y", interval="1d", progress=False)
-        if isinstance(df_raw.columns, pd.MultiIndex):
-            df_raw.columns = df_raw.columns.get_level_values(0)
-
-        if df_raw.empty:
-            st.error("No data found.")
-            st.stop()
-        
-        # --- Calculate Indicators ---
-        # 1. Moving Averages
-        df_raw['SMA_Short'] = df_raw['Close'].rolling(window=short_window).mean()
-        df_raw['SMA_Long'] = df_raw['Close'].rolling(window=long_window).mean()
-        
-        # 2. RSI
-        df_raw['RSI'] = calculate_rsi(df_raw['Close'])
-        
-        # 3. Bollinger Bands
-        df_raw = calculate_bollinger_bands(df_raw)
-        
-        # 4. MACD
-        df_raw = calculate_macd(df_raw)
-        
-        # 5. KDJ
-        df_raw = calculate_kdj(df_raw)
-        
-        # 6. OBV
-        df_raw = calculate_obv(df_raw)
-        
-        # Slice for Backtest
-        df = df_raw.tail(days_to_test).copy()
-
-        # Signal Generation (MA Cross)
-        df['Signal'] = np.where(df['SMA_Short'] > df['SMA_Long'], 1, 0)
-        df['Position_Change'] = df['Signal'].diff()
-
-        # Backtest Engine
-        position = 0      
-        cash = initial_capital
-        trade_log = []    
-
-        for date, row in df.iterrows():
-            price = row['Close']
-            change = row['Position_Change']
-            date_str = date.strftime('%Y-%m-%d')
+        with st.spinner("Fetching market data..."):
+            df_raw = yf.download(sidebar_stock, period="2y", interval="1d", progress=False)
+            if isinstance(df_raw.columns, pd.MultiIndex):
+                df_raw.columns = df_raw.columns.get_level_values(0)
             
-            if change == 1 and position == 0:
-                position = cash / price
-                cash = 0
-                trade_log.append(f"[{date_str}] BUY  @ ${price:.2f}")
-            elif change == -1 and position > 0:
-                cash = position * price
-                position = 0
-                trade_log.append(f"[{date_str}] SELL @ ${price:.2f} (Cash: ${cash:.2f})")
-
-        final_value = cash
-        if position > 0:
-            final_value = position * df.iloc[-1]['Close']
-
-        roi = ((final_value - initial_capital) / initial_capital) * 100
-        buy_hold_roi = ((df.iloc[-1]['Close'] - df.iloc[0]['Close']) / df.iloc[0]['Close']) * 100
-
-        # ---------------------------------------------------------
-        # Dashboard
-        # ---------------------------------------------------------
-        st.subheader("Market Status Dashboard")
-        curr = df_raw.iloc[-1]
-        
-        # Logic for status
-        trend_status = "Bullish" if curr['SMA_Short'] > curr['SMA_Long'] else "Bearish"
-        macd_status = "Bullish" if curr['MACD_Line'] > curr['MACD_Signal'] else "Bearish"
-        bb_status = "High Volatility" if curr['BB_Width'] > df_raw['BB_Width'].mean() else "Stable"
-        
-        # RSI Logic
-        if curr['RSI'] > 70: rsi_status = "Overbought"
-        elif curr['RSI'] < 30: rsi_status = "Oversold"
-        else: rsi_status = "Neutral"
-
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Trend (MA)", trend_status, f"{curr['Close']:.2f}")
-        c2.metric("Momentum (MACD)", macd_status, f"{curr['MACD_Hist']:.2f}")
-        c3.metric("RSI (14)", f"{curr['RSI']:.1f}", rsi_status)
-        c4.metric("Volatility (BB)", bb_status, f"Width: {curr['BB_Width']:.2f}")
-
-        # ---------------------------------------------------------
-        # Performance & Chart
-        # ---------------------------------------------------------
-        st.markdown("---")
-        c_p1, c_p2, c_p3 = st.columns(3)
-        c_p1.metric("Strategy Return", f"{roi:.2f}%")
-        c_p2.metric("Buy & Hold Return", f"{buy_hold_roi:.2f}%")
-        c_p3.metric("Final Equity", f"${final_value:,.2f}")
-
-        st.subheader("Technical Analysis Chart")
-        
-        # Prepare plots
-        plots = []
-        # MAs
-        plots.append(mpf.make_addplot(df['SMA_Short'], color='orange', width=1.5, label=f'SMA {short_window}'))
-        plots.append(mpf.make_addplot(df['SMA_Long'], color='blue', width=1.5, label=f'SMA {long_window}'))
-        
-        # Bollinger Bands (Optional)
-        if show_bollinger:
-            plots.append(mpf.make_addplot(df['BB_Upper'], color='gray', alpha=0.3, width=0.8))
-            plots.append(mpf.make_addplot(df['BB_Lower'], color='gray', alpha=0.3, width=0.8))
-
-        # Additional Indicator Panel
-        if add_indicator == "MACD":
-            plots.append(mpf.make_addplot(df['MACD_Line'], panel=1, color='fuchsia', ylabel='MACD'))
-            plots.append(mpf.make_addplot(df['MACD_Signal'], panel=1, color='b'))
-            # Histogram for MACD
-            plots.append(mpf.make_addplot(df['MACD_Hist'], type='bar', panel=1, color='dimgray', alpha=0.5))
-        elif add_indicator == "RSI":
-            plots.append(mpf.make_addplot(df['RSI'], panel=1, color='purple', ylabel='RSI', ylim=(0, 100)))
-            # Add overbought/oversold lines
-            plots.append(mpf.make_addplot([70]*len(df), panel=1, color='red', linestyle='--', width=0.8))
-            plots.append(mpf.make_addplot([30]*len(df), panel=1, color='green', linestyle='--', width=0.8))
-        elif add_indicator == "KDJ":
-            plots.append(mpf.make_addplot(df['K'], panel=1, color='orange', ylabel='KDJ'))
-            plots.append(mpf.make_addplot(df['D'], panel=1, color='blue'))
-            plots.append(mpf.make_addplot(df['J'], panel=1, color='purple'))
-        elif add_indicator == "OBV":
-            plots.append(mpf.make_addplot(df['OBV'], panel=1, color='teal', ylabel='OBV'))
-
-        # Buy/Sell Markers
-        buy_signals = np.where(df['Position_Change'] == 1, df['Low']*0.98, np.nan)
-        sell_signals = np.where(df['Position_Change'] == -1, df['High']*1.02, np.nan)
-        
-        if not np.all(np.isnan(buy_signals)):
-            plots.append(mpf.make_addplot(buy_signals, type='scatter', markersize=100, marker='^', color='red'))
-        if not np.all(np.isnan(sell_signals)):
-            plots.append(mpf.make_addplot(sell_signals, type='scatter', markersize=100, marker='v', color='green'))
-
-        # Plotting
-        fig, axlist = mpf.plot(df, type='candle', style='yahoo', 
-                           title=f'{sidebar_stock} Technical Analysis',
-                           volume=(add_indicator=="None"), # Show volume only if no other panel takes space
-                           addplot=plots, returnfig=True, figsize=(12, 8),
-                           panel_ratios=(2, 1) if add_indicator != "None" else (1,))
-        
-        # Annotations
-        ax_main = axlist[0]
-        for i, (index, row) in enumerate(df.iterrows()):
-            if row['Position_Change'] == 1:
-                ax_main.annotate(f"{row['Close']:.0f}", xy=(i, row['Low']*0.98), 
-                                 xytext=(0, -15), textcoords='offset points', ha='center', color='red', fontsize=8)
-            elif row['Position_Change'] == -1:
-                ax_main.annotate(f"{row['Close']:.0f}", xy=(i, row['High']*1.02), 
-                                 xytext=(0, 15), textcoords='offset points', ha='center', color='green', fontsize=8)
-
-        st.pyplot(fig)
-
-        # ---------------------------------------------------------
-        # Future Forecast
-        # ---------------------------------------------------------
-        st.markdown("---")
-        st.subheader("3-Day Price Forecast (Beta)")
-        
-        df_predict = predict_future_ma(df_raw, short_window, long_window, days_to_predict=3)
-        cols = st.columns(3)
-        for i, (idx, row) in enumerate(df_predict.iterrows()):
-            with cols[i]:
-                st.write(f"**{idx.strftime('%m/%d')}**")
-                st.metric("Proj. Price", f"${row['Close']:.2f}")
-                signal = "Bullish" if row['SMA_Short'] > row['SMA_Long'] else "Bearish"
-                color = "green" if signal == "Bullish" else "red"
-                st.markdown(f"Signal: :{color}[{signal}]")
-
+            # Indicators
+            df_raw['SMA_Short'] = df_raw['Close'].rolling(window=short_window).mean()
+            df_raw['SMA_Long'] = df_raw['Close'].rolling(window=long_window).mean()
+            df_raw['RSI'] = calculate_rsi(df_raw['Close'])
+            df_raw = calculate_macd(df_raw)
+            df_raw = calculate_bollinger_bands(df_raw)
+            
+            # Slice
+            df = df_raw.tail(days_to_test).copy()
+            
+            # Backtest
+            df['Signal'] = np.where(df['SMA_Short'] > df['SMA_Long'], 1, 0)
+            df['Position_Change'] = df['Signal'].diff()
+            
+            pos = 0; cash = initial_capital
+            for _, row in df.iterrows():
+                if row['Position_Change'] == 1 and pos == 0:
+                    pos = cash / row['Close']; cash = 0
+                elif row['Position_Change'] == -1 and pos > 0:
+                    cash = pos * row['Close']; pos = 0
+            final_val = cash if pos == 0 else pos * df.iloc[-1]['Close']
+            roi = (final_val - initial_capital) / initial_capital * 100
+            
     except Exception as e:
-        st.error(f"Error: {e}")
+        st.error(f"Data Error: {e}")
+        st.stop()
+
+    # 3. Dashboard Grid (Cards)
+    st.markdown("### 📈 Market Status")
+    
+    curr = df_raw.iloc[-1]
+    prev = df_raw.iloc[-2]
+    
+    # Determine Status Colors
+    trend = "Bullish" if curr['SMA_Short'] > curr['SMA_Long'] else "Bearish"
+    
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Price", f"${curr['Close']:.2f}", f"{curr['Close']-prev['Close']:.2f}")
+    col2.metric("Trend", trend, f"{short_window}/{long_window} MA")
+    col3.metric("RSI (14)", f"{curr['RSI']:.1f}", "Overbought" if curr['RSI']>70 else "Normal")
+    col4.metric("Strategy ROI", f"{roi:.2f}%", f"Eq: ${final_val:.0f}")
+
+    # 4. Professional Chart (Dark Mode)
+    st.markdown("### 🕯️ Technical Chart")
+    
+    # Customizing mplfinance to match Dribbble dark theme
+    market_colors = mpf.make_marketcolors(up='#26A69A', down='#EF5350', inherit=True)
+    dribbble_style = mpf.make_mpf_style(marketcolors=market_colors, gridstyle=':', y_on_right=True, facecolor='#0E1117', figcolor='#0E1117', gridcolor='#30363D')
+
+    plots = []
+    plots.append(mpf.make_addplot(df['SMA_Short'], color='#FFA726', width=1.5))
+    plots.append(mpf.make_addplot(df['SMA_Long'], color='#29B6F6', width=1.5))
+    
+    if show_bollinger:
+        plots.append(mpf.make_addplot(df['BB_Upper'], color='#80DEEA', alpha=0.3))
+        plots.append(mpf.make_addplot(df['BB_Lower'], color='#80DEEA', alpha=0.3))
+        
+    if add_indicator == "MACD":
+        plots.append(mpf.make_addplot(df['MACD_Hist'], type='bar', panel=1, color='dimgray', alpha=0.5, ylabel='MACD'))
+        plots.append(mpf.make_addplot(df['MACD_Line'], panel=1, color='#AB47BC'))
+        plots.append(mpf.make_addplot(df['MACD_Signal'], panel=1, color='#29B6F6'))
+    elif add_indicator == "RSI":
+        plots.append(mpf.make_addplot(df['RSI'], panel=1, color='#AB47BC', ylabel='RSI', ylim=(0,100)))
+        plots.append(mpf.make_addplot([70]*len(df), panel=1, color='#EF5350', linestyle='--', width=0.8))
+        plots.append(mpf.make_addplot([30]*len(df), panel=1, color='#66BB6A', linestyle='--', width=0.8))
+
+    # Buy/Sell Arrows
+    buy_sig = np.where(df['Position_Change'] == 1, df['Low']*0.98, np.nan)
+    sell_sig = np.where(df['Position_Change'] == -1, df['High']*1.02, np.nan)
+    if not np.all(np.isnan(buy_sig)):
+        plots.append(mpf.make_addplot(buy_sig, type='scatter', markersize=80, marker='^', color='#00E676'))
+    if not np.all(np.isnan(sell_sig)):
+        plots.append(mpf.make_addplot(sell_sig, type='scatter', markersize=80, marker='v', color='#FF1744'))
+
+    fig, axlist = mpf.plot(df, type='candle', style=dribbble_style, 
+                       volume=(add_indicator=="None"), 
+                       addplot=plots, returnfig=True, figsize=(12, 8),
+                       panel_ratios=(2, 1) if add_indicator != "None" else (1,),
+                       fontscale=0.8)
+    
+    # Text Annotations (White text for dark mode)
+    ax_main = axlist[0]
+    ax_main.yaxis.label.set_color('#8B949E')
+    ax_main.xaxis.label.set_color('#8B949E')
+    ax_main.tick_params(axis='x', colors='#8B949E')
+    ax_main.tick_params(axis='y', colors='#8B949E')
+
+    for i, (index, row) in enumerate(df.iterrows()):
+        if row['Position_Change'] == 1:
+            ax_main.annotate(f"{row['Close']:.0f}", xy=(i, row['Low']*0.98), 
+                             xytext=(0, -15), textcoords='offset points', ha='center', color='#00E676', fontsize=8)
+        elif row['Position_Change'] == -1:
+            ax_main.annotate(f"{row['Close']:.0f}", xy=(i, row['High']*1.02), 
+                             xytext=(0, 15), textcoords='offset points', ha='center', color='#FF1744', fontsize=8)
+
+    st.pyplot(fig)
+
+    # 5. Future Prediction (Footer Cards)
+    st.markdown("### 🔮 AI Forecast (3-Day)")
+    df_pred = predict_future_ma(df_raw, short_window, long_window)
+    
+    f_cols = st.columns(3)
+    for i, (idx, row) in enumerate(df_pred.iterrows()):
+        signal_icon = "🟢" if row['SMA_Short'] > row['SMA_Long'] else "🔴"
+        with f_cols[i]:
+            st.markdown(f"""
+            <div style="background-color: #1F242D; padding: 10px; border-radius: 8px; border: 1px solid #30363D; text-align: center;">
+                <div style="color: #8B949E; font-size: 12px;">{idx.strftime('%b %d')}</div>
+                <div style="color: #FAFAFA; font-size: 18px; font-weight: bold;">${row['Close']:.2f}</div>
+                <div style="color: #E6EDF3; font-size: 14px; margin-top: 5px;">{signal_icon}</div>
+            </div>
+            """, unsafe_allow_html=True)
