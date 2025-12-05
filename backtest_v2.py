@@ -21,13 +21,13 @@ if 'long_window' not in st.session_state:
     st.session_state['long_window'] = 30
 
 # =========================================================
-# Custom CSS (The "Dribbble Style" Magic)
+# Custom CSS (Dribbble Style with Fixes)
 # =========================================================
 st.markdown("""
     <style>
     /* 1. Global Background and Font */
     .stApp {
-        background-color: #0E1117; /* Very dark blue/black background */
+        background-color: #0E1117; 
         color: #FAFAFA;
         font-family: 'Inter', sans-serif;
     }
@@ -38,22 +38,23 @@ st.markdown("""
         border-right: 1px solid #30363D;
     }
     
-    /* 3. Metric Card Design (Dashboard Cards) */
+    /* 3. Metric Card Design (Border Radius Reduced) */
     div[data-testid="stMetric"] {
-        background-color: #1F242D; /* Card background */
+        background-color: #1F242D; 
         padding: 15px;
-        border-radius: 12px;
+        border-radius: 8px; /* Reduced from 12px */
         border: 1px solid #30363D;
         box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
         transition: transform 0.2s;
     }
     div[data-testid="stMetric"]:hover {
         transform: translateY(-2px);
-        border-color: #58A6FF; /* Hover glow */
+        border-color: #58A6FF;
     }
     
-    /* 4. Button Styling (Neon Look) */
-    .stButton > button {
+    /* 4. Button Styling */
+    /* Primary Button (Run Full Analysis) - Green */
+    .stButton > button.primary {
         background: linear-gradient(45deg, #238636, #2EA043);
         color: white;
         border: none;
@@ -61,14 +62,27 @@ st.markdown("""
         font-weight: bold;
         transition: all 0.3s ease;
     }
-    .stButton > button:hover {
+    .stButton > button.primary:hover {
         box-shadow: 0 0 10px #2EA043;
     }
+
+    /* Optimization Button (Non-Primary) - Navy Blue and White Text */
+    .stButton > button:not(.primary) {
+        background-color: #1A73E8; /* Navy Blue */
+        color: white; /* White Text */
+        border: 1px solid #1A73E8;
+        border-radius: 6px; 
+    }
+    .stButton > button:not(.primary):hover {
+        background-color: #3B82F6;
+        border-color: #3B82F6;
+    }
+
     
-    /* 5. DataFrame Styling */
+    /* 5. DataFrame Styling (Border Radius Reduced) */
     [data-testid="stDataFrame"] {
         background-color: #161B22;
-        border-radius: 10px;
+        border-radius: 8px; /* Reduced from 10px */
         padding: 10px;
     }
     
@@ -86,36 +100,32 @@ st.markdown("""
     footer {visibility: hidden;}
     header {visibility: hidden;}
     
-    /* 8. Expander Style */
+    /* 8. Expander Style (Border Radius Reduced) */
     .streamlit-expanderHeader {
         background-color: #1F242D;
-        border-radius: 8px;
+        border-radius: 8px; /* Reduced from 8px, ensuring consistency */
         color: #E6EDF3;
     }
     
-    /* === NEW: Input Field Styling for Dark UI === */
+    /* === Input Field Styling for Dark UI === */
     
-    /* Target Text Inputs (e.g., Ticker) */
     div[data-testid="stTextInput"] input {
         background-color: #161B22 !important;
-        color: #FAFAFA !important; /* Input text is white */
+        color: #FAFAFA !important; 
         border: 1px solid #30363D !important;
     }
     
-    /* Target Number Input Container (for border/background) */
     div[data-testid="stNumberInput"] > div {
         background-color: #161B22 !important;
         border: 1px solid #30363D !important;
         border-radius: 6px;
     }
     
-    /* Target Number Input Text Box (for internal text color) */
     div[data-testid="stNumberInput"] input {
         background-color: #161B22 !important;
-        color: #FAFAFA !important; /* Input number is white */
+        color: #FAFAFA !important;
     }
     
-    /* Ensure the slider value label is white */
     div[data-testid="stSlider"] label {
         color: #FAFAFA !important;
     }
@@ -243,6 +253,8 @@ st.title(f"📊 {sidebar_stock} Analytics")
 
 with st.expander("🚀 Strategy Optimizer", expanded=False):
     st.markdown("Run a 6-month historical simulation to find the best parameters.")
+    
+    # Check if the optimization button is pressed
     if st.button("Auto-Optimize Parameters"):
         with st.spinner("Simulating strategies..."):
             results_df, error = run_optimization(sidebar_stock)
@@ -250,13 +262,13 @@ with st.expander("🚀 Strategy Optimizer", expanded=False):
         if error:
             st.error(error)
         elif results_df is not None:
-            best_short = int(results_df.iloc[0]['Short'])
-            best_long = int(results_df.iloc[0]['Long'])
+            best_short = results_df.iloc[0]['Short']
+            best_long = results_df.iloc[0]['Long']
             best_ret = results_df.iloc[0]['Return']
             
-            # Update State
-            st.session_state['short_window'] = best_short
-            st.session_state['long_window'] = best_long
+            # Update State - FIX: Convert float to int before updating session state
+            st.session_state['short_window'] = int(best_short)
+            st.session_state['long_window'] = int(best_long)
             
             st.success(f"Best Found: {best_short}/{best_long} (Return: {best_ret:.2f}%)")
             st.dataframe(results_df.head(5).style.format("{:.2f}"))
