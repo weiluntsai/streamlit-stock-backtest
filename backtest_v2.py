@@ -25,22 +25,22 @@ if 'long_window' not in st.session_state:
 # =========================================================
 st.markdown("""
     <style>
-    /* 1. 全局背景與字體 */
+    /* 1. Global Background and Font */
     .stApp {
-        background-color: #0E1117; /* 極深藍黑背景 */
+        background-color: #0E1117; /* Very dark blue/black background */
         color: #FAFAFA;
         font-family: 'Inter', sans-serif;
     }
     
-    /* 2. 側邊欄美化 */
+    /* 2. Sidebar Styling */
     [data-testid="stSidebar"] {
         background-color: #161B22;
         border-right: 1px solid #30363D;
     }
     
-    /* 3. Metric 卡片化設計 (模仿 Dashboard 小卡片) */
+    /* 3. Metric Card Design (Dashboard Cards) */
     div[data-testid="stMetric"] {
-        background-color: #1F242D; /* 卡片背景 */
+        background-color: #1F242D; /* Card background */
         padding: 15px;
         border-radius: 12px;
         border: 1px solid #30363D;
@@ -49,10 +49,10 @@ st.markdown("""
     }
     div[data-testid="stMetric"]:hover {
         transform: translateY(-2px);
-        border-color: #58A6FF; /* 滑鼠懸停發光 */
+        border-color: #58A6FF; /* Hover glow */
     }
     
-    /* 4. 按鈕美化 (霓虹風格) */
+    /* 4. Button Styling (Neon Look) */
     .stButton > button {
         background: linear-gradient(45deg, #238636, #2EA043);
         color: white;
@@ -65,14 +65,14 @@ st.markdown("""
         box-shadow: 0 0 10px #2EA043;
     }
     
-    /* 5. 表格美化 */
+    /* 5. DataFrame Styling */
     [data-testid="stDataFrame"] {
         background-color: #161B22;
         border-radius: 10px;
         padding: 10px;
     }
     
-    /* 6. 標題與文字顏色調整 */
+    /* 6. Titles and Text Colors */
     h1, h2, h3 {
         color: #E6EDF3 !important;
         font-weight: 600;
@@ -81,16 +81,43 @@ st.markdown("""
         color: #8B949E !important;
     }
     
-    /* 7. 隱藏 Streamlit 預設頂部與 footer */
+    /* 7. Hide default Streamlit elements */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     header {visibility: hidden;}
     
-    /* 8. Expander 樣式 */
+    /* 8. Expander Style */
     .streamlit-expanderHeader {
         background-color: #1F242D;
         border-radius: 8px;
         color: #E6EDF3;
+    }
+    
+    /* === NEW: Input Field Styling for Dark UI === */
+    
+    /* Target Text Inputs (e.g., Ticker) */
+    div[data-testid="stTextInput"] input {
+        background-color: #161B22 !important;
+        color: #FAFAFA !important; /* Input text is white */
+        border: 1px solid #30363D !important;
+    }
+    
+    /* Target Number Input Container (for border/background) */
+    div[data-testid="stNumberInput"] > div {
+        background-color: #161B22 !important;
+        border: 1px solid #30363D !important;
+        border-radius: 6px;
+    }
+    
+    /* Target Number Input Text Box (for internal text color) */
+    div[data-testid="stNumberInput"] input {
+        background-color: #161B22 !important;
+        color: #FAFAFA !important; /* Input number is white */
+    }
+    
+    /* Ensure the slider value label is white */
+    div[data-testid="stSlider"] label {
+        color: #FAFAFA !important;
     }
     </style>
     """, unsafe_allow_html=True)
