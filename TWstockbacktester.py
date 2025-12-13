@@ -186,20 +186,54 @@ def predict_future_ma(df_historical, short_window, long_window, days_to_predict=
     
     return df_combined.tail(days_to_predict)
 
+# =========================================================
+# Intelligent Data Fetcher (Handles TW vs TWO)
+# =========================================================
+def fetch_stock_data(symbol, period, interval):
+    """
+    Fetches data from yfinance. 
+    If data is empty and looks like a Taiwan stock, 
+    it auto-swaps suffixes (.TW <-> .TWO) to find the correct exchange.
+    """
+    symbol = symbol.upper().strip()
+    
+    # 1. Attempt initial fetch
+    df = yf.download(symbol, period=period, interval=interval, progress=False)
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
+    
+    # 2. Smart Fallback for Taiwan Stocks
+    if df.empty and (symbol.endswith('.TW') or symbol.endswith('.TWO')):
+        alt_symbol = ""
+        if symbol.endswith('.TW'):
+            alt_symbol = symbol.replace('.TW', '.TWO')
+        else:
+            alt_symbol = symbol.replace('.TWO', '.TW')
+            
+        # Try alternative suffix
+        df_alt = yf.download(alt_symbol, period=period, interval=interval, progress=False)
+        if isinstance(df_alt.columns, pd.MultiIndex):
+            df_alt.columns = df_alt.columns.get_level_values(0)
+            
+        if not df_alt.empty:
+            return df_alt, alt_symbol  # Return new data and corrected symbol
+            
+    return df, symbol
+
 def run_optimization(stock_symbol):
     short_windows = [5, 10, 15, 20]
     long_windows = [20, 30, 40, 50, 60]
     results = []
 
     try:
-        # Optimization runs on 6mo of data
-        df_raw = yf.download(stock_symbol, period="6mo", interval="1d", progress=False)
-        if isinstance(df_raw.columns, pd.MultiIndex):
-            df_raw.columns = df_raw.columns.get_level_values(0)
+        # Use smart fetcher
+        df_raw, valid_symbol = fetch_stock_data(stock_symbol, "6mo", "1d")
         
         if df_raw.empty:
-            return None, "No data found."
-
+            return None, f"No data found for {stock_symbol}. Please check the ticker."
+        
+        # If symbol was corrected, notify user invisibly (context update) or just proceed
+        
         for short_w in short_windows:
             for long_w in long_windows:
                 if short_w >= long_w:
@@ -234,8 +268,8 @@ def run_optimization(stock_symbol):
 st.sidebar.markdown("## ⚙️ Configuration")
 sidebar_stock = st.sidebar.text_input(
     "Ticker", 
-    value="2330.TW", # Default to TSMC (台積電) to show local support
-    help="US Stocks: TSLA, AMD. Taiwan Stocks: 2330.TW, 2454.TW" # Added Help text
+    value="2330.TW", 
+    help="US: AAPL, TSLA. TWSE: 2330.TW. TPEx: 8069.TWO (Auto-detects .TW/.TWO)"
 )
 days_to_test = st.sidebar.slider("Lookback Days", 30, 365, 90)
 initial_capital = st.sidebar.number_input("Capital ($)", value=10000.0)
@@ -283,16 +317,24 @@ if st.button("Run Full Analysis", type="primary"):
     
     # Data Processing
     try:
-        with st.spinner("Fetching market data..."):
-            # Fetch data (2 years for long lookback/accurate indicators)
-            df_raw = yf.download(sidebar_stock, period="2y", interval="1d", progress=False)
-            if isinstance(df_raw.columns, pd.MultiIndex):
-                df_raw.columns = df_raw.columns.get_level_values(0)
+        with st.spinner(f"Fetching market data for {sidebar_stock}..."):
+            # Use smart fetcher
+            df_raw, valid_symbol = fetch_stock_data(sidebar_stock, "2y", "1d")
             
+            if df_raw.empty:
+                st.error(f"Error: No data found for {sidebar_stock}. Try checking the suffix (.TW vs .TWO).")
+                st.stop()
+            
+            # Notify if symbol was swapped
+            if valid_symbol != sidebar_stock.upper().strip():
+                st.toast(f"ℹ️ Auto-corrected ticker to: {valid_symbol}", icon="🔄")
+                # Update title to reflect reality
+                # st.title(f"📊 {valid_symbol} Analytics") 
+
             # === ROBUSTNESS CHECK ===
             min_data_needed = max(long_window, 30) 
-            if df_raw.empty or len(df_raw) < min_data_needed:
-                st.error(f"Error: Not enough historical data. Only {len(df_raw)} days available. Need at least {min_data_needed} days for the selected MA parameters.")
+            if len(df_raw) < min_data_needed:
+                st.error(f"Error: Not enough historical data. Only {len(df_raw)} days available.")
                 st.stop()
             # ========================
 
