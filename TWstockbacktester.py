@@ -289,6 +289,13 @@ if st.button("Run Full Analysis", type="primary"):
             if isinstance(df_raw.columns, pd.MultiIndex):
                 df_raw.columns = df_raw.columns.get_level_values(0)
             
+            # === ROBUSTNESS CHECK ===
+            min_data_needed = max(long_window, 30) 
+            if df_raw.empty or len(df_raw) < min_data_needed:
+                st.error(f"Error: Not enough historical data. Only {len(df_raw)} days available. Need at least {min_data_needed} days for the selected MA parameters.")
+                st.stop()
+            # ========================
+
             # Indicators
             df_raw['SMA_Short'] = df_raw['Close'].rolling(window=short_window).mean()
             df_raw['SMA_Long'] = df_raw['Close'].rolling(window=long_window).mean()
